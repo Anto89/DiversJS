@@ -1,0 +1,100 @@
+/**
+ * Custom Binding pour le plugin jQuery tag-it avec autocomplete. Fonctionne avec un tableau d'objets ValueLabel.
+ * <ul data-bind="tagit:{tags:[ViewModelProperty], autocomplete:{source: [AutocompleteFunction]}}" ></ul>
+ */
+ko.bindingHandlers.tagit = {
+		init: function (element, valueAccessor, allBindings, viewModel) {
+			// Objet de cache stockant une collection de clefs (labels) / valeurs (ids).
+			var selectedValueLabels = {};
+			
+			var tagitDefaultAutocompleteOptions = $.extend({}, defaultAutocompleteOptions);
+			
+			var initselectedValueLabels = function() {
+				ko.utils.arrayForEach(valueAccessor().tags(), function(tag) {
+	    			selectedValueLabels[ko.utils.unwrapObservable(tag.label)] = ko.utils.unwrapObservable(tag.value);
+                });
+	    		return true;
+			}
+		    
+			var bind = function () {
+		    	var tags = ko.utils.unwrapObservable(valueAccessor().tags());
+		    	// Suppression des tags existants.
+		    	tags.splice(0, tags.length);
+		    	// Reconstruction a partir des tags assignes.
+		    	ko.utils.arrayForEach($(element).tagit("assignedTags"), function (label) {
+		    		tags.push(new common.ValueLabel(selectedValueLabels[label], label));
+                });
+		    };
+
+		    var tagitOptions = $.extend({
+		    	allowDuplicates: false,
+		        allowSpaces: false,
+		        caseSensitive: false,
+		        showAutocompleteOnFocus: true,
+		        afterTagAdded: function(event, ui) {
+		        	bind();
+		        	return true;
+		        },
+		        beforeTagAdded: function(event, ui) {
+		        	// A l'init, ajout des objects charges par defaut dans le cache.
+		        	if (common.countObjectProperties(selectedValueLabels) === 0) {
+		        		initselectedValueLabels();
+		        	}
+		        	
+		        	// Si le tag ne correspond pas à une option selectionnee.
+		        	if (selectedValueLabels[ui.tagLabel] == null) {
+		        		// Pas de creation et la valeur entree est supprimee.
+		        		$(event.target).find('.ui-widget-content.ui-autocomplete-input').val('');
+		        		return false;
+		        	}
+		        	return true;
+		        },
+		        afterTagRemoved: function(event, ui) {
+		        	bind(); 
+		        }
+		    }, valueAccessor().options || {});
+
+		    var autocompleteOptions = valueAccessor().autocomplete;
+		    
+		    // Redefinit la propriete 'source' de l'autocomplete.
+		    autocompleteOptions.source = function(request, response) {
+		    	valueAccessor().autocomplete.source(request.term, response).done(function(data){
+		    		// Appel du callback.
+		    		response(data);
+		    	})
+		    };
+		    
+		    // Redefinit la propriete 'select' de l'autocomplete pour pouvoir retourner le label de l'objet.
+		    autocompleteOptions.select = function(event, ui) {
+		    	// Ajout de l'option selectionnee a l'objet de cache.
+		    	selectedValueLabels[ui.item.label] = ui.item.value;
+		    	// Creation du tag.
+		    	$(element).tagit("createTag", (ui.item.label));
+		    	// Return false pour eviter de creer 2 fois le tag a la perte du focus.
+		    	return false;
+		    };
+		    
+		    // Redefinit la propriete 'change' de l'autocomplete pour n'autoriser qu'une mise a jour par selection.
+		    autocompleteOptions.change = function(event, ui) {
+		    	// Si pas de selection a l'autocomplete, le champ est remis a vide.
+		    	if (!ui.item) {
+		    		$(event.target).val('');
+		    	}
+		    }
+		    
+		    $.extend(tagitOptions, { autocomplete: $.extend(tagitDefaultAutocompleteOptions, autocompleteOptions) });
+		    $(element).tagit(tagitOptions);
+		},
+		update: function (element, valueAccessor) {
+			var tags = ko.utils.unwrapObservable(valueAccessor().tags);
+			var tagsToCreate = ko.utils.arrayMap(tags, function(tag) {
+				return tag;
+			});
+	        
+	        if (tagsToCreate.length !== 0) {
+	        	ko.utils.arrayForEach(tagsToCreate, function(tag) {
+	        		$(element).tagit("createTag", ko.utils.unwrapObservable(tag.label));
+	        	});
+	        }
+		}
+};
